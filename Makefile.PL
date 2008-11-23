@@ -10,5 +10,8 @@ WriteMakefile(
     ABSTRACT     => 'An interface to the worldwidedns.net site.',
     PREREQ_PM    => {
                      'Test::Simple' => 0.44,
+                     'Exception::Class' => 1.23,
+                     'Class::InsideOut' => 1.09,
+                     'LWP' => 5.810,
                     },
 );

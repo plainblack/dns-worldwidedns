@@ -64,7 +64,7 @@ DNS::WorldWideDns - An interface to the worldwidedns.net service.
 
 =head1 DESCRIPTION
 
-This module allows you to dynamically create, remove, update, delete, and report on domains hosted at worldwidedns.net. It makes working with the sometimes obtuse, but very useful L<<a href="https://www.worldwidedns.net/dns_api_protocol.asp">DNS API protocol</a>> a breeze.
+This module allows you to dynamically create, remove, update, delete, and report on domains hosted at L<http://www.worldwidedns.net>. It makes working with their sometimes obtuse, but very useful, DNS API protocol (L<http://www.worldwidedns.net/dns_api_protocol.asp>) a breeze.
 
 =head1 USAGE
 
@@ -599,7 +599,7 @@ The url field is the URL that was requested. This can be very helpful when debug
 
 The response field is the L<HTTP::Response> object that was returned from the request.
 
-The code field is the error code number or numbers that were returned by the worldwidedns.net API. More informationa about them can be found in the L<<a href="https://www.worldwidedns.net/dns_api_protocol.asp">DNS API protocol documentation pages</a>>.
+The code field is the error code number or numbers that were returned by the worldwidedns.net API. More informationa about them can be found in the DNS API protocol documentation pages (L<http://www.worldwidedns.net/dns_api_protocol.asp>).
 
 =head1 BUGS
 

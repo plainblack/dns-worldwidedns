@@ -1,11 +1,6 @@
-pod2text DNS::WorldWideDns.pm > README
+DNS::WorldWideDns is a module that allows you to remotely manipulate domains hosted at worldwidedns.net.
 
-If this is still here it means the programmer was too lazy to create the readme file.
-
-You can create it now by using the command shown above from this directory.
-
-At the very least you should be able to use this set of instructions
-to install the module...
+Use the standard incantation to install DNS::WorldWideDns:
 
 perl Makefile.PL
 make
