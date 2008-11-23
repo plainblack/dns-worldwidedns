@@ -2,7 +2,7 @@ package DNS::WorldWideDns;
 
 BEGIN {
     use vars qw($VERSION);
-    $VERSION     = '0.01';
+    $VERSION     = '0.0101';
 }
 
 
@@ -37,6 +37,7 @@ use Exception::Class (
 
     );
 use HTTP::Request;
+use HTTP::Request::Common qw(POST);
 use LWP::UserAgent;
 
 readonly username => my %username;
@@ -51,12 +52,19 @@ DNS::WorldWideDns - An interface to the worldwidedns.net service.
 =head1 SYNOPSIS
 
  use DNS::WorldWideDns;
-
+ 
  $dns = DNS::WorldWideDns->new($user, $pass);
+ 
+ $hashRef = $dns->getDomains;
+ $hashRef = $dns->getDomain($domain);
+ 
+ $dns->addDomain($domain);
+ $dns->updateDomain($domain, $properties);
+ $dns->deleteDomain($domain);
 
 =head1 DESCRIPTION
 
-This module allows you to dynamically create, remove, update, delete, and report on domains hosted at worldwidedns.net.
+This module allows you to dynamically create, remove, update, delete, and report on domains hosted at worldwidedns.net. It makes working with the sometimes obtuse, but very useful L<<a href="https://www.worldwidedns.net/dns_api_protocol.asp">DNS API protocol</a>> a breeze.
 
 =head1 USAGE
 
@@ -71,6 +79,8 @@ The following methods are available from this class:
 
 Adds a domain to your account. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
 
+B<NOTE:> You should use updateDomain() directly after adding a domain to give it some properties and records.
+
 Returns a 1 on success.
 
 =head3 domain
@@ -79,7 +89,9 @@ A domain to add.
 
 =head3 isPrimary
 
-A boolean indicating if this is a primary domain, or a slave. Defaults to 1.
+A boolean indicating if this is a primary domain, or a secondary. Defaults to 1.
+
+B<NOTE:> This module currently only supports primary domains.
 
 =head3 isDynamic
 
@@ -144,47 +156,21 @@ sub addDomain {
 }
 
 
-
 ###############################################################
 
-=head2 getDomain ( domain )
+=head2 deleteDomain ( domain )
 
-Retrieves the information about a domain. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
+Removes a domain from your account. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
 
-Returns a hash reference structure that looks like this:
-
- {
-    hostmaster  => "you.example.com",
-    refresh     => "86400",
-    retry       => "1200",
-    expire      => "186400",
-    ttl         => "3600",
-    transferAcl => "*",
-    records     => [
-        {
-            name    => "smtp",
-            type    => "A",
-            data    => "1.1.1.1"
-        },
-        {
-            name    => "@",
-            type    => "MX",
-            data    => "10 smtp.example.com"
-        },
-    ]
- }
- 
-The transferAcl parameter is an access control list for zone transfers. Asterisk (*) implies that anyone can do zone transfers. Otherwise it could be a list of IP addresses separated by spaces.
-
-This method will return a maximum of twenty records in the record field.
+Returns a 1 on success.
 
 =head3 domain
 
-A domain to request information about.
+A domain to delete.
 
 =cut
 
-sub getDomain {
+sub deleteDomain {
     my ($self, $domain) = @_;
 	unless (defined $domain) {
         MissingParam->throw(error=>'Need a domain.');
@@ -192,50 +178,92 @@ sub getDomain {
 	unless ($domain =~ m{^[\w\-\.]+$}xms) {
         InvalidParam->throw(error=>'Domain is improperly formatted.', got=>$domain);
     }
-    my $url = 'https://www.worldwidedns.net/api_dns_list_domain.asp?NAME='.$self->username.'&PASSWORD='.$self->password.'&DOMAIN='.$domain;
+    my $url = 'https://www.worldwidedns.net/api_dns_delete_domain.asp?NAME='.$self->username.'&PASSWORD='.$self->password.'&DOMAIN='.$domain;
     my $response =  $self->makeRequest($url);
     my $content = $response->content;
     chomp $content;
-    if ($content eq "405") {
+    if ($content eq "200") {
+        return 1;
+    }
+    elsif ($content eq "405") {
         RequestError->throw(
-            error       => 'Domain name could not be found.',
+            error       => 'Domain not in account.',
             url         => $url,
-            code        => 405,
+            code        => $content,
             response    => $response,
         );     
     }
-    my @lines = split "\n", $response->content;
-    my %domain;
-    $domain{hostmaster} = shift @lines;
-    $domain{refresh} = shift @lines;
-    $domain{retry} = shift @lines;
-    $domain{expire} = shift @lines;
-    $domain{ttl} = shift @lines;
-    $domain{secure} = shift @lines;
-    foreach my $line (@lines) {
-        $line =~ m{^([\w\-\.\*\@]+)\x1F(A|A6|AAAA|AFSDB|CNAME|DNAME|HINFO|ISDN|MB|MG|MINFO|MR|MX|NS|NSAP|PTR|RP|RT|SOA|SRV|TXT|X25)\x1F(.+)$}xmsi;
-        my $name = $1;
-        my $type = $2;
-        my $recordData = $3;
-        print join('~',$name,$type,$recordData);
-        chomp $recordData;
-#        push @{$domain{records}}, {
- #           name    => $name,
-  #          type    => $type,
-   #         data    => $recordData,
-    #        };
+    elsif ($content eq "406") {
+        RequestError->throw(
+            error       => 'Could not remove domain. Try again.',
+            url         => $url,
+            code        => $content,
+            response    => $response,
+        );     
     }
-    return \%domain;
+    RequestError->throw(
+        error       => 'Got back an invalid response.',
+        url         => $url,
+        response    => $response,
+    );     
 }
 
 
 ###############################################################
 
-=head2 getZone ( domain, [ nameServer ] )
+=head2 getDomain ( domain, [ nameServer ] )
 
-Retrieves the zone file for a domain from a specific name server. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
+Retrieves the zone information about the domain. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
 
-Returns a zone file.
+Returns a hash reference structure that looks like this:
+
+ {
+    hostmaster      => "you.example.com",
+    refresh         => "86400",
+    retry           => "1200",
+    expire          => "186400",
+    ttl             => "3600",
+    secureTransfer  => "*",
+    records         => []
+ }
+
+The hostmaster field is the email address of the person in charge of this domain. Note that it should use dot notation, so don't use an at (@) sign.
+
+The refresh field tells a cache name server how often (in seconds) to request fresh data from the authoratative name server. Minimum 3600.
+
+The retry field tells a cache name server how long to wait (in seconds) before attempting to retry a failed refresh. Minimum 3600.
+
+The expire field tells a cache name server how old (in seconds) to let data become before discarding it. Minimum 3600.
+
+The ttl (Time To Live) is the default value for records that don't have a TTL specified.
+
+The secureTransfer parameter is an access control list for zone transfers. Asterisk (*) implies that anyone can do zone transfers. Otherwise it could be a list of IP addresses separated by spaces. Setting it to an empty string means no servers may do zone transfers on the domain.
+
+The records field is an array reference of records attached to this domain. It looks something like this:
+
+ [
+    {
+        name    => "smtp",
+        ttl     => 3600,
+        type    => "A",
+        data    => "1.1.1.1"
+    },
+    {
+        name    => "@",
+        ttl     => 3600,
+        type    => "MX",
+        data    => "10 smtp.example.com"
+    },
+ ]
+
+The name field is the subdomain or host name that will be prepended on to the domain. For example the "www" in "www.example.com". The at (@) symbol means the domain itself, which is why you can type google.com not just www.google.com. The asterisk (*) is a wildcard, which means if no matching records are found, use this record to service the request.
+
+The ttl field tells a caching name server how long (in seconds) it may use this record before it has to fetch new information about it. Minimum 3600.
+
+The type field is the domain record type defined in RFC1035. Common record types are A, CNAME, an MX.
+
+The data field holds the data of the record. It's usually an ip address or a fully qualified host name.
+
 
 =head3 domain
 
@@ -247,7 +275,7 @@ Defaults to 1. Choose from 1, 2, or 3. The number of the primary, secondary or t
 
 =cut
 
-sub getZone {
+sub getDomain {
     my ($self, $domain, $nameServer) = @_;
 	unless (defined $domain) {
         MissingParam->throw(error=>'Need a domain.');
@@ -256,7 +284,10 @@ sub getZone {
         InvalidParam->throw(error=>'Domain is improperly formatted.', got=>$domain);
     }
     $nameServer ||= 1;
-    my $url = 'https://www.worldwidedns.net/api_dns_list_domain.asp?NAME='.$self->username.'&PASSWORD='.$self->password.'&DOMAIN='.$domain.'&NS='.$nameServer;
+    if ($nameServer =~ m/^\D+$/ || $nameServer > 3 || $nameServer < 0) {
+        InvalidParam->throw(error=>'Name server must be a number between 1 and 3.', got=>$nameServer);
+    }
+    my $url = 'https://www.worldwidedns.net/api_dns_viewzone.asp?NAME='.$self->username.'&PASSWORD='.$self->password.'&DOMAIN='.$domain.'&NS='.$nameServer;
     my $response =  $self->makeRequest($url);
     my $content = $response->content;
     chomp $content;
@@ -284,7 +315,36 @@ sub getZone {
             response    => $response,
         );     
     }
-    return $content;
+    my %domain;
+    
+    # secure zone transfer
+    if ($content =~ m{^;\s+SecureZT((?:\s?\d+\.\d+\.\d+\.\d+){0,})$}xmsi) {
+        $domain{secureTransfer} = $1;
+    }
+    else {
+        $domain{secureTransfer} = '*';
+    }
+
+    # hostmaster, refresh, retry, expires, ttl
+    if ($content =~ m{^\@\s+IN\s+SOA\s+[\w\.\-]+\.\s+([\w\.\-]+)\.\s+\d+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s*$}xmsi) {
+        $domain{hostmaster}     = $1;
+        $domain{refresh}        = $2;
+        $domain{retry}          = $3;
+        $domain{expire}         = $4;
+        $domain{ttl}            = $5;
+    }
+    
+    # records
+    while ($content =~ m{^(\@|\*|[\w\.\-]+)?\s+(\d+)?\s*(?:IN)?\s+(A|A6|AAAA|AFSDB|CNAME|DNAME|HINFO|ISDN|MB|MG|MINFO|MR|MX|NS|NSAP|PTR|RP|RT|SRV|TXT|X25)\s+(.*?)\s*$}xmsig) {
+        push @{$domain{records}}, {
+            name   => $1,
+            ttl    => $2,
+            type   => $3,
+            data   => $4,
+        };
+    }
+    
+    return \%domain;
 }
 
 
@@ -292,7 +352,9 @@ sub getZone {
 
 =head2 getDomains ( )
 
-Returns a hash reference where the key is the domain and the value is either a 'Primary' or an 'Slave'. Throws InvalidAccount and RequestError.
+Returns a hash reference where the key is the domain and the value is either a 'Primary' or an 'Secondary'. Throws InvalidAccount and RequestError.
+
+B<NOTE:> This module does not currently handle creating, reading, or updating secondary domains, but it may in the future, so this indicator is left in.
 
 =cut
 
@@ -302,7 +364,6 @@ sub getDomains {
     my $content = $self->makeRequest($url)->content; 
     my %domains;
     while ($content =~ m{([\w+\.\-]+)\x1F(P|S)}xmsig) {
-        print $1."\n";
         my $type = ($2 eq 'P') ? 'Primary' : 'Secondary';
         $domains{$1} = $type;
     }
@@ -312,7 +373,7 @@ sub getDomains {
 
 ###############################################################
 
-=head2 makeRequest ( url )
+=head2 makeRequest ( url, [ request ] )
 
 Makes a GET request. Returns the HTTP::Response from the request. Throws MissingParam, InvalidParam, InvalidAccount and RequestError.
 
@@ -322,17 +383,21 @@ B<NOTE:> Normally you never need to use this method, it's used by the other meth
 
 The URL to request.
 
+=head3 request
+
+Normally an HTTP::Request object is created for you on the fly. But if you want to make your own and pass it in you are welcome to do so.
+
 =cut
 
 sub makeRequest {
-    my ($self, $url) = @_;
+    my ($self, $url, $request) = @_;
 	unless (defined $url) {
         MissingParam->throw(error=>'Need a url.');
     }
 	unless ($url =~ m{^https://www.worldwidedns.net/.*$}xms) {
         InvalidParam->throw(error=>'URL is improperly formatted.', got=>$url);
     }
-    my $request =  HTTP::Request->new(GET => $url);
+    $request ||= HTTP::Request->new(GET => $url);
     my $ua = LWP::UserAgent->new;
     my $response = $ua->request($request);
     
@@ -413,10 +478,6 @@ sub new {
 
 Returns the password set in the constructor.
 
- Usage     : $dns->password;
- Argument  :
- Throws    : 
-
 =cut
 
 ###############################################################
@@ -454,22 +515,30 @@ sub updateDomain {
         InvalidParam->throw(error=>'Expected a params hash reference.', got=>$params);
     }
 
-    # make request
-    my $url = 'https://www.worldwidedns.net/api_dns_modify.asp?NAME='.$self->username.'&PASSWORD='.$self->password.'&DOMAIN='.$domain
-        .'&HOSTMASTER='.$params->{hostmaster}
-        .'&REFRESH='.$params->{refresh}
-        .'&RETRY='.$params->{retry}
-        .'&SECURE='.$params->{transferAcl}
-        .'&EXPIRE='.$params->{exipre}
-        .'&TTL='.$params->{ttl};
-    my $i=1;
+    # zone data
+    my $zoneData;
     foreach my $record (@{$params->{records}}) {
-        $url .= '&S'.$i.'='.$record->{name}
-            .'&T'.$i.'='.$record->{type}
-            .'&D'.$i.'='.$record->{data};
-        $i++;
-    }        
-    my $response =  $self->makeRequest($url);
+        $zoneData .= join(" ", $record->{name}, $record->{ttl}, 'IN', $record->{type}, $record->{data})."\r\n";
+    }
+
+    # make request
+    my $url = 'https://www.worldwidedns.net/api_dns_modify_raw.asp';
+    my $request = POST $url, [
+        NAME        => $self->username,
+        PASSWORD    => $self->password,
+        DOMAIN      => $domain,
+        HOSTMASTER  => $params->{hostmaster},
+        REFRESH     => $params->{refresh},
+        RETRY       => $params->{retry},
+        SECURE      => $params->{secureTransfer},
+        EXPIRE      => $params->{expire},
+        TTL         => $params->{ttl},
+        FOLDER      => '',
+        ZONENS      => 'ns1.worldwidedns.net',
+        ZONEDATA    => $zoneData,
+        ];
+    
+    my $response =  $self->makeRequest($url, $request);
     my $content = $response->content;
     chomp $content;
     
@@ -499,24 +568,46 @@ sub updateDomain {
 
 Returns the username set in the constructor.
 
- Usage     : $dns->username;
- Argument  :
- Throws    : 
-
 =cut
 
 
 =head1 EXCEPTIONS
 
+This module uses L<Exception::Class> for exception handling. Each method is capable of throwing one or more of the following exceptions:
 
+=head2 Exception
+        
+A general undefined error.
+
+=head2 MissingParam
+
+An expected parameter to a method was not passed.
+
+=head2 InvalidParam
+
+A parameter passed in doesn't match what was expected. This add a "got" field to the exception which contains what was received.
+
+=head2 InvalidAccount
+
+Authentication to worldwidedns.net failed.
+
+=head2 RequestError
+
+Some part of the request/response to worldwidedns.net did not go as expected. This adds url, response, and code fields to the exception.
+
+The url field is the URL that was requested. This can be very helpful when debugging a problem.
+
+The response field is the L<HTTP::Response> object that was returned from the request.
+
+The code field is the error code number or numbers that were returned by the worldwidedns.net API. More informationa about them can be found in the L<<a href="https://www.worldwidedns.net/dns_api_protocol.asp">DNS API protocol documentation pages</a>>.
 
 =head1 BUGS
 
+None known.
 
+=head1 CAVEATS
 
-=head1 SUPPORT
-
-
+This module is not feature complete with the API worldwidedns.net provides. It does your basic CRUD and that's it. They have other methods this doesn't use, and they have a whole reseller API which this doesn't support. If you need those features, patches are welcome.
 
 =head1 AUTHOR
 
