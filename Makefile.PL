@@ -11,7 +11,7 @@ WriteMakefile(
     PREREQ_PM    => {
                      'Test::Simple' => 0.44,
                      'Exception::Class' => 1.23,
-                     'Class::InsideOut' => 1.09,
-                     'LWP' => 5.810,
+                     'Class::InsideOut' => 1.06,
+                     'LWP' => 5.805,
                     },
 );

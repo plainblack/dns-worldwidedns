@@ -2,7 +2,7 @@ package DNS::WorldWideDns;
 
 BEGIN {
     use vars qw($VERSION);
-    $VERSION     = '0.0101';
+    $VERSION     = '0.0102';
 }
 
 
@@ -443,13 +443,15 @@ sub makeRequest {
 
 =head2 new ( username, password )
 
-Constructor.
+Constructor. Throws MissingParam.
 
- Usage     : $dns = DNS::WorldWideDns->new($username, $password);
- Argument  :
-    username    : Your worldwidedns.net username.
-    password    : The password to go with username.
- Throws    : MissingParam
+=head3 username
+
+Your worldwidedns.net username.
+
+=head3 password
+
+The password to go with username.
 
 =cut
 
