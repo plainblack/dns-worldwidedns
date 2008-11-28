@@ -21,6 +21,10 @@ ok(Exception::Class->caught('MissingParam'), 'Expecting a missing param exceptio
 my $domains = eval{$dns->getDomains};
 my $e;
 ok($e = Exception::Class->caught('RequestError'), 'Expecting an invalid account exception on request.');
-is($e->code, '403', 'Expecting a 403 error code.');
+my $code = $e->code;
+SKIP: {
+    skip("Need a network connection.", 1) unless defined $code;
+    is($code, '403', 'Expecting a 403 error code.');
+}
 
 
